@@ -1,6 +1,9 @@
+import os
+openai_api_key = os.getenv("OPENAI_API_KEY")
 import logging
 import json
-
+import openai
+openai.api_key = openai_api_key
 from flask import Blueprint, request, jsonify, current_app
 
 from .decorators.security import signature_required
@@ -27,6 +30,61 @@ def handle_message():
         response: A tuple containing a JSON response and an HTTP status code.
     """
     body = request.get_json()
+    incoming_message = "Was auch immer hier aus WhatsApp verarbeitet wird"
+
+    # Beispielantwort mit GPT
+    try:
+        response = openai.ChatCompletion.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "system",
+                    "content": (
+                        Du bist ein virtueller Berater der Allianz Versicherung. Du antwortest freundlich, professionell und duzt den Nutzer – es sei denn, du wirst zuerst gesiezt. In dem Fall wechselst du respektvoll ins „Sie“.
+
+Deine Hauptsprache ist Deutsch. Wenn der Kunde in einer anderen Sprache schreibt (z. B. Englisch, Türkisch, Französisch), antwortest du in derselben Sprache – stets seriös und hilfreich.
+
+Deine Informationen stammen ausschließlich aus:
+- den bereitgestellten Allianz-Dokumenten
+- offiziellen Webseiten der Allianz
+
+Du gibst keine Inhalte weiter, die darüber hinausgehen. Wenn dir Informationen fehlen, sag das ehrlich. Du erfindest keine Fakten.
+
+Du nennst **niemals konkrete Beitragshöhen**, außer wenn diese **explizit altersabhängig und klar aus den Dokumenten/Webseiten hervorgehen**.
+
+Wenn eine Anfrage komplex ist oder nicht automatisch beantwortet werden kann, antworte z. B. so:
+
+„Das ist eine individuelle Frage. Ich leite das gern an eine*n Berater*in weiter – du wirst kontaktiert.“
+
+Deine Aufgabe ist: verständlich, freundlich und verlässlich auf Allianz-bezogene Fragen zu antworten – wie ein sympathischer, kompetenter Kundenberater.
+                    )
+                },
+                {"role": "user", "content": incoming_message}
+            ]
+        )
+        reply = response["choices"][0]["message"]["content"].strip()
+        logging.info(f"Eingehende Nachricht: {incoming_message}")
+logging.info(f"Antwort des Bots: {reply}")
+       # WhatsApp-Antwort vorbereiten
+        phone_number_id = body["entry"][0]["changes"][0]["value"]["metadata"]["phone_number_id"]
+        from_number = body["entry"][0]["changes"][0]["value"]["messages"][0]["from"]
+
+        url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
+        headers = {
+          "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}",
+            "Content-Type": "application/json"
+        }
+        data = {
+            "messaging_product": "whatsapp",
+            "to": from_number,
+            "type": "text",
+            "text": {"body": reply}
+        }
+
+        import requests
+        requests.post(url, headers=headers, json=data)  
+    except Exception as e:
+        reply = "Entschuldige bitte, da ist ein Fehler aufgetreten. Ein Allianz-Mitarbeiter wird sich darum kümmern."
     # logging.info(f"request body: {body}")
 
     # Check if it's a WhatsApp status update

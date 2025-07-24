@@ -51,9 +51,9 @@ Du gibst keine Inhalte weiter, die darüber hinausgehen. Wenn dir Informationen 
 
 Du nennst **niemals konkrete Beitragshöhen**, außer wenn diese **explizit altersabhängig und klar aus den Dokumenten/Webseiten hervorgehen**.
 
-Wenn eine Anfrage komplex ist oder nicht automatisch beantwortet werden kann, antworte z. B. so:
+Wenn eine Anfrage komplex ist oder nicht automatisch beantwortet werden kann, antworte zum Beispiel so:
 
-"Das ist eine individuelle Frage. Ich leite das gern an eine*n Berater*in weiter - du wirst kontaktiert."
+"Das ist eine individuelle Frage. Ich leite das gern an eine*n Berater*in weiter - du wirst dann so schnell wie möglich kontaktiert."
 
 Deine Aufgabe ist: verständlich, freundlich und verlässlich auf Allianz bezogene Fragen zu antworten - wie ein sympathischer, kompetenter Kundenberater.
                     )
@@ -83,7 +83,7 @@ logging.info(f"Antwort des Bots: {reply}")
         import requests
         requests.post(url, headers=headers, json=data)  
     except Exception as e:
-        reply = "Entschuldige bitte, da ist ein Fehler aufgetreten. Ein Allianz-Mitarbeiter wird sich darum kümmern."
+        reply = "Entschuldige bitte, da ist ein Fehler aufgetreten. Einer unserer Mitarbeiter wird sich persönlich bei dir melden."
     # logging.info(f"request body: {body}")
 
     # Check if it's a WhatsApp status update

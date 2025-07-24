@@ -1,23 +1,29 @@
 import json
-from functools import wraps
-from flask import current_app, jsonify, request
 import logging
-import hashlib
 import hmac
+import hashlib
+from flask import current_app
 
 
 def validate_signature(payload, signature):
     """
     Validate the incoming payload's signature against our expected signature
-    """
-    # Use the App Secret to hash the payload
+    if not isinstance(payload, dict):
+        logging.error(f"Ungültiger payload.type: {type(payload)} = Inhalt: {payload} )")
+        return False
+
+    app_secret_bytes = bytes(current_app.config["APP_SECRET"], "latin-1")
+
+    msg = json.dumps(payload,
+                     separators=(',', ':'),
+                     sort_keys=True).encode("utf-8")
+
     expected_signature = hmac.new(
-        bytes(current_app.config["APP_SECRET"], "latin-1"),
-      msg=json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8"),
-        digestmod=hashlib.sha256,
+        app_secret_bytes,
+        msg=msg,
+        digestmod=hashlib.sha256
     ).hexdigest()
 
-    # Check if the signature matches
     return hmac.compare_digest(expected_signature, signature)
 
 

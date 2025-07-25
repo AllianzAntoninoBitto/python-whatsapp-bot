@@ -101,10 +101,17 @@ def handle_message():
                 "messaging_product": "whatsapp",
                 "to": from_number,
                 "type": "text",
-                "text": {"body": reply}
+                "text": {
+                    "body": reply
+                }
             }
 
-            requests.post(url, headers=headers, json=data)
+            response = requests.post(url, headers=headers, json=data)
+
+            if response.status_code != 200:
+                logging.error(f"Fehler beim Senden an WhatsApp: {response.status_code} - {response.text}")
+            else:
+                logging.info("Antwort erfolgreich an WhatsApp gesendet.")
 
             return jsonify({"status": "ok"}), 200
         else:

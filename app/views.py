@@ -1,14 +1,14 @@
 import os
 import logging
 import json
-import openai
-import requests # Neu hinzugefügt, falls nicht schon vorhanden
+from openai import OpenAI # Geändert: Importiere OpenAI-Client
+import requests # Stelle sicher, dass dies oben steht, falls nicht schon
 
 from flask import Blueprint, request, jsonify, current_app
 
 from .decorators.security import signature_required
 from .utils.whatsapp_utils import (
-    process_whatsapp_message, # Beibehalten, falls es andere Funktionen hat
+    process_whatsapp_message,
     is_valid_whatsapp_message,
 )
 
@@ -28,8 +28,9 @@ Wenn eine Anfrage komplex ist oder nicht automatisch beantwortet werden kann, an
 
 Deine Aufgabe ist: verständlich, freundlich und verlässlich auf Allianz bezogene Fragen zu antworten - wie ein sympathischer, kompetenter Kundenberater."""
 
-# --- API-Schlüssel initialisieren ---
-openai.api_key = os.getenv("OPENAI_API_KEY") # Sicherstellen, dass dies von Render kommt
+# --- OpenAI-Client initialisieren ---
+# API-Schlüssel wird automatisch aus OPENAI_API_KEY Umgebungsvariable gelesen
+client = OpenAI() # Dies ersetzt openai.api_key = os.getenv("OPENAI_API_KEY")
 
 # --- Blueprint für Webhooks ---
 webhook_blueprint = Blueprint("webhook", __name__)
@@ -38,19 +39,17 @@ webhook_blueprint = Blueprint("webhook", __name__)
 def handle_message():
     """
     Verarbeitet eingehende Webhook-Ereignisse von der WhatsApp API.
-
-    Diese Funktion verarbeitet eingehende WhatsApp-Nachrichten und andere Ereignisse,
-    wie z.B. Zustellungsstatus. Wenn das Ereignis eine gültige Nachricht ist, wird sie
-    verarbeitet. Wenn die eingehende Payload kein erkanntes WhatsApp-Ereignis ist,
-    wird ein Fehler zurückgegeben.
-
-    Jede gesendete Nachricht löst 4 HTTP-Anfragen an deinen Webhook aus: message, sent, delivered, read.
-
-    Rückgaben:
-        response: Ein Tupel, das eine JSON-Antwort und einen HTTP-Statuscode enthält.
     """
     try:
-        body = request.get_json()
+        # Versuche, den JSON-Body zu erhalten.
+        # request.get_json() kann None zurückgeben, wenn der Content-Type nicht 'application/json' ist
+        # oder der Body leer ist.
+        body = request.get_json(silent=True) # silent=True verhindert Fehler, wenn Body nicht JSON ist
+
+        # Wenn kein Body vorhanden ist oder er leer ist, ist es oft ein Status-Update oder ein ungültiger Request.
+        if not body:
+            logging.info("Leerer oder ungültiger JSON-Body empfangen. Möglicherweise ein Status-Update ohne Inhalt oder ein ungültiger Request.")
+            return jsonify({"status": "ok", "message": "No valid JSON body"}), 200
 
         # Überprüfen, ob es sich um ein WhatsApp-Statusupdate handelt
         if (
@@ -65,25 +64,28 @@ def handle_message():
         # Überprüfen, ob es sich um eine gültige WhatsApp-Nachricht handelt
         if is_valid_whatsapp_message(body):
             # Extrahieren der eingehenden Nachricht
-            # Annahme: Die Nachricht ist im Textfeld des ersten Messages-Objekts
-            incoming_message = body["entry"][0]["changes"][0]["value"]["messages"][0]["text"]
+            # Sicherstellen, dass der Pfad zur Nachricht korrekt ist
+            try:
+                incoming_message = body["entry"][0]["changes"][0]["value"]["messages"][0]["text"]["body"]
+            except KeyError:
+                logging.error("Fehler: Konnte Nachrichtentext nicht aus Payload extrahieren.")
+                return jsonify({"status": "error", "message": "Nachrichtentext nicht gefunden"}), 400
+
             logging.info(f"Eingehende Nachricht: {incoming_message}")
 
-            # Optional: Wenn process_whatsapp_message(body) andere Aufgaben hat, rufe es hier auf
-            # process_whatsapp_message(body)
-
-            # Beispielantwort mit GPT
-            response = openai.ChatCompletion.create(
+            # OpenAI ChatCompletion mit neuem Client-Objekt
+            response = client.chat.completions.create( # Geändert: client.chat.completions.create
                 model="gpt-3.5-turbo",
                 messages=[
                     {
                         "role": "system",
-                        "content": BOT_DESCRIPTION_PROMPT # Referenz auf die globale Variable
+                        "content": BOT_DESCRIPTION_PROMPT
                     },
                     {"role": "user", "content": incoming_message}
                 ]
             )
-            reply = response["choices"][0]["message"]["content"].strip()
+            # Extrahieren der Antwort aus dem neuen Objekt-Struktur
+            reply = response.choices[0].message.content.strip() # Geändert: response.choices[0].message.content
             logging.info(f"Antwort des Bots: {reply}")
 
             # WhatsApp-Antwort vorbereiten und senden
@@ -107,20 +109,21 @@ def handle_message():
             return jsonify({"status": "ok"}), 200
         else:
             # Wenn die Anfrage kein WhatsApp API-Ereignis ist, Fehler zurückgeben
+            logging.info("Request ist kein gültiges WhatsApp API-Ereignis.")
             return (
-                jsonify({"status": "error", "message": "Kein WhatsApp API-Ereignis"}),
+                jsonify({"status": "error", "message": "Kein gültiges WhatsApp API-Ereignis"}),
                 404,
             )
 
     except json.JSONDecodeError:
-        logging.error("Fehler beim Dekodieren von JSON.")
+        logging.error("Fehler beim Dekodieren von JSON des Webhook-Payloads.")
         return jsonify({"status": "error", "message": "Ungültiges JSON bereitgestellt"}), 400
+    except KeyError as ke:
+        logging.error(f"Fehler: Fehlender Schlüssel im Payload - {ke}")
+        return jsonify({"status": "error", "message": f"Fehlender Datenpunkt im Payload: {ke}"}), 400
     except Exception as e:
         # Dies ist der allgemeine Fehler-Handler für alle anderen Ausnahmen
         logging.error(f"Ein unerwarteter Fehler ist aufgetreten: {e}")
-        # Optional: Sende eine generische Fehlermeldung an den Benutzer
-        # Hier ist es schwierig, die from_number zu bekommen, wenn der Fehler früh auftritt
-        # Daher geben wir nur einen Serverfehler zurück.
         return jsonify({"status": "error", "message": "Interner Serverfehler"}), 500
 
 
@@ -129,24 +132,18 @@ def verify():
     """
     Verarbeitet die Webhook-Verifizierungsanfrage von WhatsApp.
     """
-    # Parameter aus der Webhook-Verifizierungsanfrage parsen
     mode = request.args.get("hub.mode")
     token = request.args.get("hub.verify_token")
     challenge = request.args.get("hub.challenge")
 
-    # Überprüfen, ob ein Token und Modus gesendet wurden
     if mode and token:
-        # Überprüfen, ob Modus und gesendeter Token korrekt sind
         if mode == "subscribe" and token == current_app.config["VERIFY_TOKEN"]:
-            # Mit 200 OK und Challenge-Token aus der Anfrage antworten
             logging.info("WEBHOOK_VERIFIED")
             return challenge, 200
         else:
-            # Antwortet mit '403 Forbidden', wenn die Verifizierungs-Tokens nicht übereinstimmen
             logging.info("VERIFICATION_FAILED")
             return jsonify({"status": "error", "message": "Verifizierung fehlgeschlagen"}), 403
     else:
-        # Antwortet mit '400 Bad Request', wenn Parameter fehlen
         logging.info("FEHLENDE_PARAMETER")
         return jsonify({"status": "error", "message": "Fehlende Parameter"}), 400
 
@@ -162,5 +159,3 @@ def webhook_get():
 def webhook_post():
     """Route für POST-Anfragen zur Nachrichtenverarbeitung."""
     return handle_message()
-
-

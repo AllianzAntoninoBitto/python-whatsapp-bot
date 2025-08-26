@@ -1,9 +1,9 @@
 import os
 import logging
 import json
+import re
 from openai import OpenAI
 import requests
-import re
 from flask import Blueprint, request, jsonify, current_app
 from .decorators.security import signature_required
 from .utils.whatsapp_utils import (
@@ -18,7 +18,7 @@ client = OpenAI()
 user_threads = {}
 
 # --- DEINE ASSISTANT ID HIER EINFÜGEN ---
-ASSISTANT_ID = "asst_1MqcBju8sZsGXqXLfmfVQotP"
+ASSISTANT_ID = "HIER_DEINE_ASSISTANT_ID_EINFÜGEN"
 
 # --- Blueprint für Webhooks ---
 webhook_blueprint = Blueprint("webhook", __name__)
@@ -30,6 +30,31 @@ def handle_message():
         if not body:
             logging.info("Leerer oder ungültiger JSON-Body empfangen. Möglicherweise ein Status-Update ohne Inhalt oder ein ungültiger Request.")
             return jsonify({"status": "ok", "message": "No valid JSON body"}), 200
+
+        # Hier wird der event_type überprüft, um Anrufe abzufangen
+        event_type = body["entry"][0]["changes"][0]["value"].get("event")
+        if event_type == "call":
+            from_number = body["entry"][0]["changes"][0]["value"]["call"]["from"]
+            logging.info(f"WhatsApp-Anruf von {from_number} empfangen. Sende automatische Antwort.")
+            
+            # Sende eine Nachricht, die den Anruf nicht annimmt
+            reply_text = "Hallo! Ich bin ein automatischer Chatbot und kann keine Anrufe annehmen. Bitte schreib mir eine Nachricht, um mir dein Anliegen mitzuteilen. 😊"
+            
+            phone_number_id = body["entry"][0]["changes"][0]["value"]["metadata"]["phone_number_id"]
+            url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
+            headers = {
+                "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "messaging_product": "whatsapp",
+                "to": from_number,
+                "type": "text",
+                "text": {"body": reply_text}
+            }
+            requests.post(url, headers=headers, json=data)
+            
+            return jsonify({"status": "ok"}), 200
 
         if (
             body.get("entry", [{}])[0]
@@ -47,14 +72,12 @@ def handle_message():
 
             incoming_message_text = ""
 
-            # Überprüfen des Nachrichtentyps und Extrahieren des Inhalts
             if message_type == "text":
                 incoming_message_text = message_body["text"]["body"]
             elif message_type == "audio":
                 audio_media_id = message_body["audio"]["id"]
                 logging.info(f"Sprachnachricht empfangen mit Media ID: {audio_media_id}")
                 
-                # Herunterladen der Sprachnachricht von der WhatsApp API
                 media_url = f"https://graph.facebook.com/v17.0/{audio_media_id}"
                 headers = {
                     "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}"
@@ -76,9 +99,7 @@ def handle_message():
                                     file=("audio.ogg", audio_file),
                                     response_format="text"
                                 )
-                                # --- KORREKTUR HIER: Der Text kommt direkt als String zurück ---
-                                incoming_message_text = whisper_response 
-                                # --- Ende der Korrektur ---
+                                incoming_message_text = whisper_response
                                 logging.info(f"Transkribierte Sprachnachricht: {incoming_message_text}")
                             except Exception as e:
                                 logging.error(f"Fehler bei der Transkription: {e}")
@@ -100,7 +121,6 @@ def handle_message():
                 logging.info("Nachricht ohne Textinhalt verarbeitet (z.B. eine leere Audionachricht).")
                 return jsonify({"status": "ok"}), 200
 
-            # --- Gedächtnis-Logik mit OpenAI Assistants API ---
             thread_id = user_threads.get(from_number)
             if not thread_id:
                 logging.info(f"Neuer Thread für Benutzer {from_number} wird erstellt.")
@@ -133,7 +153,6 @@ def handle_message():
                     if reply_text:
                         break
 
-            # Korrektur für Formatierungen
             reply_text = reply_text.replace('\\n', '\n')
             reply_parts = reply_text.split('[NL]')
             

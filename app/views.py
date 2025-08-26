@@ -82,28 +82,32 @@ def handle_message():
                     if reply_text:
                         break
 
-            # Korrektur für Zeilenumbrüche, damit diese in WhatsApp angezeigt werden
-            reply_text = reply_text.replace('\\n', '\n')
-
+            # Jetzt den Bot-Text nach unserem Trennzeichen aufteilen
+            reply_parts = reply_text.split('[NL]')
+            
             logging.info(f"Antwort des Bots: {reply_text}")
 
             phone_number_id = body["entry"][0]["changes"][0]["value"]["metadata"]["phone_number_id"]
+            from_number = body["entry"][0]["changes"][0]["value"]["messages"][0]["from"]
             
             url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
             headers = {
                 "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}",
                 "Content-Type": "application/json"
             }
-            data = {
-                "messaging_product": "whatsapp",
-                "to": from_number,
-                "type": "text",
-                "text": {"body": reply_text}
-            }
-
-            whatsapp_send_response = requests.post(url, headers=headers, json=data)
-            logging.info(f"WhatsApp Send API Status: {whatsapp_send_response.status_code}")
-            logging.info(f"WhatsApp Send API Body: {whatsapp_send_response.text}")
+            
+            # Sende jede aufgeteilte Nachricht einzeln
+            for part in reply_parts:
+                if part.strip(): # Sende nur, wenn der Teil nicht leer ist
+                    data = {
+                        "messaging_product": "whatsapp",
+                        "to": from_number,
+                        "type": "text",
+                        "text": {"body": part.strip()}
+                    }
+                    whatsapp_send_response = requests.post(url, headers=headers, json=data)
+                    logging.info(f"WhatsApp Send API Status: {whatsapp_send_response.status_code}")
+                    logging.info(f"WhatsApp Send API Body: {whatsapp_send_response.text}")
 
             return jsonify({"status": "ok"}), 200
         else:

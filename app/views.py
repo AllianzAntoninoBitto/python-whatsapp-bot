@@ -1,7 +1,6 @@
 import os
 import logging
 import json
-import re
 from openai import OpenAI
 import requests
 from flask import Blueprint, request, jsonify, current_app
@@ -18,7 +17,7 @@ client = OpenAI()
 user_threads = {}
 
 # --- DEINE ASSISTANT ID HIER EINFÜGEN ---
-ASSISTANT_ID = "asst_1MqcBju8sZsGXqXLfmfVQotP"
+ASSISTANT_ID = "HIER_DEINE_ASSISTANT_ID_EINFÜGEN"
 
 # --- Blueprint für Webhooks ---
 webhook_blueprint = Blueprint("webhook", __name__)
@@ -41,14 +40,33 @@ def handle_message():
             return jsonify({"status": "ok"}), 200
 
         if is_valid_whatsapp_message(body):
-            try:
-                from_number = body["entry"][0]["changes"][0]["value"]["messages"][0]["from"]
-                incoming_message_text = body["entry"][0]["changes"][0]["value"]["messages"][0]["text"]["body"]
-            except KeyError:
-                logging.error("Fehler: Konnte Nachrichtentext nicht aus Payload extrahieren.")
-                return jsonify({"status": "error", "message": "Nachrichtentext nicht gefunden"}), 400
+            message_body = body["entry"][0]["changes"][0]["value"]["messages"][0]
+            from_number = message_body["from"]
+            message_type = message_body["type"]
 
-            logging.info(f"Eingehende Nachricht von {from_number}: {incoming_message_text}")
+            incoming_message_text = ""
+
+            # Überprüfen des Nachrichtentyps und Extrahieren des Inhalts
+            if message_type == "text":
+                incoming_message_text = message_body["text"]["body"]
+            elif message_type == "audio":
+                audio_media_id = message_body["audio"]["id"]
+                logging.info(f"Sprachnachricht empfangen mit Media ID: {audio_media_id}")
+                
+                # --- HIER WÜRDE DEINE LOGIK ZUM TRANSCRIBIEREN DER SPRACHNACHRICHT HINKOMMEN ---
+                # Dies ist komplexer und erfordert einen API-Aufruf an WhatsApp, um die Datei zu erhalten,
+                # und dann einen Aufruf an die OpenAI Whisper API zur Transkription.
+                # Als Platzhalter für jetzt, um den Chatbot nicht crashen zu lassen:
+                incoming_message_text = "Eine Sprachnachricht wurde gesendet, die ich noch nicht verarbeiten kann."
+            else:
+                logging.info(f"Nachrichtentyp '{message_type}' wird noch nicht unterstützt.")
+                return jsonify({"status": "ok"}), 200
+
+            if not incoming_message_text:
+                logging.info("Nachricht ohne Textinhalt verarbeitet (z.B. eine leere Audionachricht).")
+                return jsonify({"status": "ok"}), 200
+
+            logging.info(f"Eingehende Nachricht von {from_number} ({message_type}): {incoming_message_text}")
 
             # --- Gedächtnis-Logik mit OpenAI Assistants API ---
             thread_id = user_threads.get(from_number)
@@ -83,17 +101,13 @@ def handle_message():
                     if reply_text:
                         break
 
-            # --- NEUE LOGIK: Post-Processing-Filter für den Bot-Output ---
-            # Entferne unerwünschte Markdown-Links und ersetze sie mit der reinen URL
-            reply_text = re.sub(r'\[.*?\]\((.*?)\)', r'\1', reply_text)
-            
-            # Trenne die Antwort in einzelne Nachrichten, falls der Bot die [NL]-Markierung setzt
+            # Korrektur für Formatierungen
+            reply_text = reply_text.replace('\\n', '\n')
             reply_parts = reply_text.split('[NL]')
             
             logging.info(f"Antwort des Bots: {reply_text}")
 
             phone_number_id = body["entry"][0]["changes"][0]["value"]["metadata"]["phone_number_id"]
-            from_number = body["entry"][0]["changes"][0]["value"]["messages"][0]["from"]
             
             url = f"https://graph.facebook.com/v17.0/{phone_number_id}/messages"
             headers = {
@@ -101,9 +115,8 @@ def handle_message():
                 "Content-Type": "application/json"
             }
             
-            # Sende jede aufgeteilte Nachricht einzeln
             for part in reply_parts:
-                if part.strip(): # Sende nur, wenn der Teil nicht leer ist
+                if part.strip():
                     data = {
                         "messaging_product": "whatsapp",
                         "to": from_number,

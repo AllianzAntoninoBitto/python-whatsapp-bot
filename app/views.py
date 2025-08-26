@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import re
 from openai import OpenAI
 import requests
 from flask import Blueprint, request, jsonify, current_app
@@ -82,7 +83,11 @@ def handle_message():
                     if reply_text:
                         break
 
-            # Jetzt den Bot-Text nach unserem Trennzeichen aufteilen
+            # --- NEUE LOGIK: Post-Processing-Filter für den Bot-Output ---
+            # Entferne unerwünschte Markdown-Links und ersetze sie mit der reinen URL
+            reply_text = re.sub(r'\[.*?\]\((.*?)\)', r'\1', reply_text)
+            
+            # Trenne die Antwort in einzelne Nachrichten, falls der Bot die [NL]-Markierung setzt
             reply_parts = reply_text.split('[NL]')
             
             logging.info(f"Antwort des Bots: {reply_text}")

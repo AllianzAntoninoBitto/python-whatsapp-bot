@@ -18,7 +18,7 @@ client = OpenAI()
 user_threads = {}
 
 # --- DEINE ASSISTANT ID HIER EINFÜGEN ---
-ASSISTANT_ID = "HIER_DEINE_ASSISTANT_ID_EINFÜGEN"
+ASSISTANT_ID = "asst_1MqcBju8sZsGXqXLfmfVQotP"
 
 # --- Blueprint für Webhooks ---
 webhook_blueprint = Blueprint("webhook", __name__)

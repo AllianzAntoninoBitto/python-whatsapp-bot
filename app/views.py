@@ -53,11 +53,47 @@ def handle_message():
                 audio_media_id = message_body["audio"]["id"]
                 logging.info(f"Sprachnachricht empfangen mit Media ID: {audio_media_id}")
                 
-                # --- HIER WÜRDE DEINE LOGIK ZUM TRANSCRIBIEREN DER SPRACHNACHRICHT HINKOMMEN ---
-                # Dies ist komplexer und erfordert einen API-Aufruf an WhatsApp, um die Datei zu erhalten,
-                # und dann einen Aufruf an die OpenAI Whisper API zur Transkription.
-                # Als Platzhalter für jetzt, um den Chatbot nicht crashen zu lassen:
-                incoming_message_text = "Eine Sprachnachricht wurde gesendet, die ich noch nicht verarbeiten kann."
+                # Herunterladen der Sprachnachricht von der WhatsApp API
+                media_url = f"https://graph.facebook.com/v17.0/{audio_media_id}"
+                headers = {
+                    "Authorization": f"Bearer {os.getenv('WHATSAPP_TOKEN')}"
+                }
+                
+                media_response = requests.get(media_url, headers=headers)
+                
+                if media_response.status_code == 200:
+                    # Der Content-Type Header enthält den Medientyp und das Format, z.B. audio/ogg
+                    # Der Wert ist im 'Location'-Header der Antwort, den wir für den Download benötigen
+                    download_url = media_response.json().get('url')
+                    
+                    if download_url:
+                        audio_data_response = requests.get(download_url, headers=headers)
+                        
+                        if audio_data_response.status_code == 200:
+                            # Transkribieren der Audiodaten mit der OpenAI Whisper API
+                            audio_file = audio_data_response.content
+                            try:
+                                # Die Whisper API erwartet den Dateinamen im 'files'-Parameter
+                                # und den 'model'-Namen.
+                                whisper_response = client.audio.transcriptions.create(
+                                    model="whisper-1",
+                                    file=("audio.ogg", audio_file),
+                                    response_format="text"
+                                )
+                                incoming_message_text = whisper_response.text # Hier ist der transkribierte Text
+                                logging.info(f"Transkribierte Sprachnachricht: {incoming_message_text}")
+                            except Exception as e:
+                                logging.error(f"Fehler bei der Transkription: {e}")
+                                incoming_message_text = "Transkription fehlgeschlagen."
+                        else:
+                            logging.error(f"Fehler beim Herunterladen der Sprachdatei: {audio_data_response.status_code}")
+                            incoming_message_text = "Fehler beim Herunterladen der Sprachdatei."
+                    else:
+                        logging.error("Download URL für Sprachnachricht nicht gefunden.")
+                        incoming_message_text = "Fehler beim Abrufen der Sprachnachricht."
+                else:
+                    logging.error(f"Fehler beim Abrufen der Media-Informationen von WhatsApp: {media_response.status_code}")
+                    incoming_message_text = "Fehler beim Verarbeiten der Sprachnachricht."
             else:
                 logging.info(f"Nachrichtentyp '{message_type}' wird noch nicht unterstützt.")
                 return jsonify({"status": "ok"}), 200
@@ -65,8 +101,6 @@ def handle_message():
             if not incoming_message_text:
                 logging.info("Nachricht ohne Textinhalt verarbeitet (z.B. eine leere Audionachricht).")
                 return jsonify({"status": "ok"}), 200
-
-            logging.info(f"Eingehende Nachricht von {from_number} ({message_type}): {incoming_message_text}")
 
             # --- Gedächtnis-Logik mit OpenAI Assistants API ---
             thread_id = user_threads.get(from_number)

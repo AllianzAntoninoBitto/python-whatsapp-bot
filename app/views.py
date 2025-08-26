@@ -3,6 +3,7 @@ import logging
 import json
 from openai import OpenAI
 import requests
+import re
 from flask import Blueprint, request, jsonify, current_app
 from .decorators.security import signature_required
 from .utils.whatsapp_utils import (
@@ -62,25 +63,22 @@ def handle_message():
                 media_response = requests.get(media_url, headers=headers)
                 
                 if media_response.status_code == 200:
-                    # Der Content-Type Header enthält den Medientyp und das Format, z.B. audio/ogg
-                    # Der Wert ist im 'Location'-Header der Antwort, den wir für den Download benötigen
                     download_url = media_response.json().get('url')
                     
                     if download_url:
                         audio_data_response = requests.get(download_url, headers=headers)
                         
                         if audio_data_response.status_code == 200:
-                            # Transkribieren der Audiodaten mit der OpenAI Whisper API
                             audio_file = audio_data_response.content
                             try:
-                                # Die Whisper API erwartet den Dateinamen im 'files'-Parameter
-                                # und den 'model'-Namen.
                                 whisper_response = client.audio.transcriptions.create(
                                     model="whisper-1",
                                     file=("audio.ogg", audio_file),
                                     response_format="text"
                                 )
-                                incoming_message_text = whisper_response.text # Hier ist der transkribierte Text
+                                # --- KORREKTUR HIER: Der Text kommt direkt als String zurück ---
+                                incoming_message_text = whisper_response 
+                                # --- Ende der Korrektur ---
                                 logging.info(f"Transkribierte Sprachnachricht: {incoming_message_text}")
                             except Exception as e:
                                 logging.error(f"Fehler bei der Transkription: {e}")

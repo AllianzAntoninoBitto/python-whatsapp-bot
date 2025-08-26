@@ -82,6 +82,9 @@ def handle_message():
                     if reply_text:
                         break
 
+            # Korrektur für Zeilenumbrüche, damit diese in WhatsApp angezeigt werden
+            reply_text = reply_text.replace('\\n', '\n')
+
             logging.info(f"Antwort des Bots: {reply_text}")
 
             phone_number_id = body["entry"][0]["changes"][0]["value"]["metadata"]["phone_number_id"]
